@@ -22,13 +22,13 @@ from .commands import auth, personal, search, social
 
 @click.group()
 @click.version_option(version=__version__, prog_name="boss")
-@click.option("-v", "--verbose", is_flag=True, help="Enable debug logging")
+@click.option("-v", "--verbose", is_flag=True, help="Enable verbose logging (show request URLs, timing)")
 @click.pass_context
 def cli(ctx, verbose: bool) -> None:
     """Boss CLI — 在终端使用 BOSS 直聘 🤝"""
     ctx.ensure_object(dict)
     if verbose:
-        logging.basicConfig(level=logging.DEBUG, format="%(name)s %(message)s")
+        logging.basicConfig(level=logging.INFO, format="%(name)s %(message)s")
     else:
         logging.basicConfig(level=logging.WARNING)
 
@@ -44,6 +44,9 @@ cli.add_command(auth.me)
 
 cli.add_command(search.search)
 cli.add_command(search.recommend)
+cli.add_command(search.detail)
+cli.add_command(search.show)
+cli.add_command(search.export)
 cli.add_command(search.cities)
 
 # ─── Personal Center commands ────────────────────────────────────────

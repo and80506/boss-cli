@@ -324,3 +324,80 @@ class TestRoundtrip:
         assert r1.exit_code == 0
         r2 = _invoke("search", "golang")
         assert r2.exit_code == 0
+
+    def test_search_then_show(self):
+        """Search → show: verify short-index navigation works end-to-end."""
+        r1 = _invoke("search", "Python", "--city", "全国")
+        assert r1.exit_code == 0
+        # Show the first result from the search
+        r2 = _invoke("show", "1")
+        assert r2.exit_code == 0
+        # Should either show detail or an API error, not crash
+        assert "职位详情" in r2.output or "jobInfo" in r2.output or "获取详情失败" in r2.output or "暂无缓存" in r2.output
+
+
+# ── Detail ──────────────────────────────────────────────────────────
+
+
+@smoke
+class TestDetail:
+    """Test detail command - fetches full job info by securityId."""
+
+    def test_detail_no_id(self):
+        """detail without argument should error."""
+        result = _invoke("detail")
+        assert result.exit_code != 0
+
+    def test_detail_invalid_id(self):
+        """detail with invalid ID should not crash."""
+        result = _invoke("detail", "invalid_test_id")
+        assert result.exit_code == 0  # Should print error, not crash
+
+
+# ── Show ────────────────────────────────────────────────────────────
+
+
+@smoke
+class TestShow:
+    """Test show command - short index navigation."""
+
+    def test_show_first_from_search(self):
+        """Search first, then show #1."""
+        _invoke("search", "golang", "--city", "杭州")
+        result = _invoke("show", "1")
+        assert result.exit_code == 0
+
+    def test_show_out_of_range(self):
+        """Show with huge index should show friendly message."""
+        result = _invoke("show", "9999")
+        assert result.exit_code == 0
+        assert "超出范围" in result.output or "暂无缓存" in result.output
+
+
+# ── Export ──────────────────────────────────────────────────────────
+
+
+@smoke
+class TestExport:
+    """Test export command - CSV/JSON export."""
+
+    def test_export_csv_stdout(self):
+        """Export to stdout as CSV."""
+        result = _invoke("export", "Python", "--city", "全国", "-n", "3", "--format", "csv")
+        assert result.exit_code == 0
+        # CSV header or empty result
+        assert "职位" in result.output or "搜索失败" in result.output or "导出失败" in result.output
+
+    def test_export_json_stdout(self):
+        """Export to stdout as JSON."""
+        result = _invoke("export", "golang", "-n", "2", "--format", "json")
+        assert result.exit_code == 0
+
+    def test_export_to_file(self, tmp_path):
+        """Export to a file."""
+        out_file = str(tmp_path / "test_jobs.csv")
+        result = _invoke("export", "Python", "-n", "2", "-o", out_file)
+        assert result.exit_code == 0
+        if "导出失败" not in result.output:
+            assert "已导出" in result.output
+

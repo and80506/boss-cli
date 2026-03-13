@@ -109,6 +109,14 @@ class BossClient:
         self._last_request_time = time.time()
         self._request_count += 1
 
+    @property
+    def request_stats(self) -> dict[str, int | float]:
+        """Return current request statistics."""
+        return {
+            "request_count": self._request_count,
+            "last_request_time": self._last_request_time,
+        }
+
     # ── Response handling ───────────────────────────────────────────
 
     def _merge_response_cookies(self, resp: httpx.Response) -> None:
@@ -143,10 +151,17 @@ class BossClient:
         last_exc: Exception | None = None
 
         for attempt in range(self._max_retries):
+            t0 = time.time()
             try:
                 resp = self.client.request(method, url, **kwargs)
+                elapsed = time.time() - t0
                 self._merge_response_cookies(resp)
                 self._mark_request()
+
+                logger.info(
+                    "[#%d] %s %s → %d (%.2fs)",
+                    self._request_count, method, url[:60], resp.status_code, elapsed,
+                )
 
                 # Retry on server errors
                 if resp.status_code in (429, 500, 502, 503, 504):
@@ -168,11 +183,13 @@ class BossClient:
                 return resp.json()
 
             except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                elapsed = time.time() - t0
                 last_exc = exc
                 wait = (2 ** attempt) + random.uniform(0, 1)
                 logger.warning(
-                    "Network error: %s, retrying in %.1fs (attempt %d/%d)",
-                    exc, wait, attempt + 1, self._max_retries,
+                    "[#%d] %s %s → Network error: %s (%.2fs), retrying in %.1fs (attempt %d/%d)",
+                    self._request_count + 1, method, url[:60], exc, elapsed, wait,
+                    attempt + 1, self._max_retries,
                 )
                 time.sleep(wait)
 

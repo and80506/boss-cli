@@ -33,7 +33,7 @@ class TestCliBasic:
         result = runner.invoke(cli, ["--help"])
         expected = [
             "login", "status", "logout", "me",
-            "search", "recommend", "cities",
+            "search", "recommend", "cities", "detail", "show", "export",
             "applied", "interviews",
             "chat", "greet", "batch-greet",
         ]
@@ -46,7 +46,7 @@ class TestCommandHelp:
 
     @pytest.mark.parametrize("cmd", [
         "login", "logout", "status", "me",
-        "search", "recommend", "cities",
+        "search", "recommend", "cities", "detail", "show", "export",
         "applied", "interviews",
         "chat", "greet", "batch-greet",
     ])
@@ -396,3 +396,113 @@ class TestClient:
             data = {"code": 999, "message": "unknown"}
             with pytest.raises(BossApiError):
                 client._handle_response(data, "test")
+
+
+# ── Index Cache ─────────────────────────────────────────────────────
+
+
+class TestIndexCache:
+    """Test short-index cache system."""
+
+    def test_save_and_get(self, tmp_path, monkeypatch):
+        from boss_cli import index_cache
+        monkeypatch.setattr(index_cache, "INDEX_CACHE_FILE", tmp_path / "index_cache.json")
+        monkeypatch.setattr(index_cache, "CONFIG_DIR", tmp_path)
+
+        jobs = [
+            {"securityId": "abc123", "jobName": "Go Dev", "brandName": "Company A"},
+            {"securityId": "def456", "jobName": "Python Dev", "brandName": "Company B"},
+        ]
+        index_cache.save_index(jobs, source="test")
+
+        result = index_cache.get_job_by_index(1)
+        assert result is not None
+        assert result["securityId"] == "abc123"
+        assert result["jobName"] == "Go Dev"
+
+        result2 = index_cache.get_job_by_index(2)
+        assert result2 is not None
+        assert result2["securityId"] == "def456"
+
+    def test_get_out_of_range(self, tmp_path, monkeypatch):
+        from boss_cli import index_cache
+        monkeypatch.setattr(index_cache, "INDEX_CACHE_FILE", tmp_path / "index_cache.json")
+        monkeypatch.setattr(index_cache, "CONFIG_DIR", tmp_path)
+
+        jobs = [{"securityId": "abc", "jobName": "Test"}]
+        index_cache.save_index(jobs, source="test")
+        assert index_cache.get_job_by_index(99) is None
+
+    def test_get_no_cache(self, tmp_path, monkeypatch):
+        from boss_cli import index_cache
+        monkeypatch.setattr(index_cache, "INDEX_CACHE_FILE", tmp_path / "nonexistent.json")
+        assert index_cache.get_job_by_index(1) is None
+
+    def test_get_index_info(self, tmp_path, monkeypatch):
+        from boss_cli import index_cache
+        monkeypatch.setattr(index_cache, "INDEX_CACHE_FILE", tmp_path / "index_cache.json")
+        monkeypatch.setattr(index_cache, "CONFIG_DIR", tmp_path)
+
+        info = index_cache.get_index_info()
+        assert not info["exists"]
+
+        jobs = [{"securityId": "x", "jobName": "T"}]
+        index_cache.save_index(jobs)
+        info = index_cache.get_index_info()
+        assert info["exists"]
+        assert info["count"] == 1
+
+    def test_zero_and_negative_index(self, tmp_path, monkeypatch):
+        from boss_cli import index_cache
+        monkeypatch.setattr(index_cache, "INDEX_CACHE_FILE", tmp_path / "index_cache.json")
+        assert index_cache.get_job_by_index(0) is None
+        assert index_cache.get_job_by_index(-1) is None
+
+
+# ── Show command ────────────────────────────────────────────────────
+
+
+class TestShowCommand:
+    """Test show command behavior without network."""
+
+    def test_show_no_cache(self, tmp_path, monkeypatch):
+        from boss_cli import index_cache
+        monkeypatch.setattr(index_cache, "INDEX_CACHE_FILE", tmp_path / "nonexistent.json")
+        result = runner.invoke(cli, ["show", "1"])
+        assert result.exit_code == 0
+        assert "暂无缓存" in result.output
+
+    def test_show_out_of_range(self, tmp_path, monkeypatch):
+        from boss_cli import index_cache
+        monkeypatch.setattr(index_cache, "INDEX_CACHE_FILE", tmp_path / "index_cache.json")
+        monkeypatch.setattr(index_cache, "CONFIG_DIR", tmp_path)
+        index_cache.save_index([{"securityId": "x", "jobName": "T"}])
+        result = runner.invoke(cli, ["show", "99"])
+        assert result.exit_code == 0
+        assert "超出范围" in result.output
+
+
+# ── Detail / Export help ────────────────────────────────────────────
+
+
+class TestNewCommandHelp:
+    """Test help output for new commands."""
+
+    def test_detail_help(self):
+        result = runner.invoke(cli, ["detail", "--help"])
+        assert result.exit_code == 0
+        assert "securityId" in result.output
+        assert "--json" in result.output
+
+    def test_show_help(self):
+        result = runner.invoke(cli, ["show", "--help"])
+        assert result.exit_code == 0
+        assert "编号" in result.output
+
+    def test_export_help(self):
+        result = runner.invoke(cli, ["export", "--help"])
+        assert result.exit_code == 0
+        assert "--format" in result.output
+        assert "csv" in result.output
+        assert "--output" in result.output
+

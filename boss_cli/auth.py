@@ -75,18 +75,35 @@ def save_credential(credential: Credential) -> None:
 
 
 def load_credential() -> Credential | None:
-    """Load credential from saved file."""
+    """Load credential from saved file with TTL-based auto-refresh.
+
+    If saved cookies are older than 7 days, automatically attempt to
+    refresh from the browser before falling back to stale cookies.
+    """
     if not CREDENTIAL_FILE.exists():
         return None
     try:
         data = json.loads(CREDENTIAL_FILE.read_text())
         cred = Credential.from_dict(data)
-        if cred.is_valid:
-            # Check TTL
-            saved_at = data.get("saved_at", 0)
-            if saved_at and (time.time() - saved_at) > _CREDENTIAL_TTL_SECONDS:
-                logger.warning("Credential is older than %d days", CREDENTIAL_TTL_DAYS)
-            return cred
+        if not cred.is_valid:
+            return None
+
+        # Check TTL — auto-refresh if stale
+        saved_at = data.get("saved_at", 0)
+        if saved_at and (time.time() - saved_at) > _CREDENTIAL_TTL_SECONDS:
+            logger.info(
+                "Credential older than %d days, attempting browser refresh",
+                CREDENTIAL_TTL_DAYS,
+            )
+            fresh = extract_browser_credential()
+            if fresh:
+                logger.info("Auto-refreshed credential from browser")
+                return fresh
+            logger.warning(
+                "Cookie refresh failed; using existing cookies (age: %d+ days)",
+                CREDENTIAL_TTL_DAYS,
+            )
+        return cred
     except (json.JSONDecodeError, KeyError) as e:
         logger.warning("Failed to load saved credential: %s", e)
     return None

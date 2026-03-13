@@ -80,9 +80,9 @@ boss-cli supports multiple authentication methods:
 
 `boss login` triggers QR code login. Other authenticated commands automatically try saved cookies first, then browser extraction.
 
-### Cookie TTL
+### Cookie TTL & Auto-Refresh
 
-Saved cookies warn after **7 days**. Re-login with `boss login` if API calls fail.
+Saved cookies auto-refresh from browser after **7 days**. If browser refresh fails, falls back to stale cookies and logs a warning.
 
 ## Environment Variables
 
@@ -92,9 +92,13 @@ Saved cookies warn after **7 days**. Re-login with `boss login` if API calls fai
 
 ## Rate Limiting & Anti-Detection
 
-- **Browser fingerprint**: macOS Chrome 133 User-Agent, `sec-ch-ua` headers
-- **Batch greet delay**: 1.5s between greetings to avoid rate limiting
-- **`__zp_stoken__` handling**: auto-detect expiry and prompt re-login
+- **Gaussian jitter**: request delays with `random.gauss(0.3, 0.15)`
+- **Random long pauses**: 5% chance of 2-5s pause to mimic reading
+- **Exponential backoff**: auto-retry on HTTP 429/5xx (max 3 retries)
+- **Response cookie merge**: `Set-Cookie` headers merged back into session
+- **HTML redirect detection**: catches auth redirects to login page
+- **Browser fingerprint**: macOS Chrome 133 UA, `sec-ch-ua` headers
+- **Request logging**: `boss -v` shows request URLs, status codes, and timing
 
 ## Use as AI Agent Skill
 
@@ -114,14 +118,15 @@ boss_cli/
 ├── __init__.py           # Package version
 ├── cli.py                # Click entry point (lightweight, add_command only)
 ├── client.py             # API client (rate-limit, retry, anti-detection)
-├── auth.py               # Authentication (browser-cookie3, QR login)
+├── auth.py               # Authentication (browser-cookie3, QR login, TTL refresh)
 ├── constants.py          # URLs, headers, city codes, filter enums
 ├── exceptions.py         # Structured exceptions (BossApiError hierarchy)
+├── index_cache.py        # Short-index cache for `boss show`
 └── commands/
     ├── __init__.py
     ├── _common.py        # handle_command, structured_output_options
     ├── auth.py           # login, logout, status, me
-    ├── search.py         # search, recommend, cities
+    ├── search.py         # search, recommend, detail, show, export, cities
     ├── personal.py       # applied, interviews
     └── social.py         # chat, greet, batch-greet
 ```
@@ -178,10 +183,11 @@ boss login                             # 二维码扫码登录
 boss status                            # 检查登录状态
 boss logout                            # 清除 Cookie
 
-# 搜索
+# 搜索 & 详情
 boss search "golang" --city 杭州       # 按城市搜索
-boss search "Python" --salary 20-30K   # 按薪资筛选
-boss search "前端" --exp 3-5年         # 按经验筛选
+boss show 3                            # 按编号查看详情
+boss detail <securityId> --json        # 指定 ID 查看
+boss export "Python" -n 50 -o jobs.csv # 导出 CSV
 
 # 推荐
 boss recommend                         # 个性化推荐
@@ -198,6 +204,7 @@ boss batch-greet "golang" -n 10        # 批量打招呼
 
 # 工具
 boss cities                            # 城市列表
+boss -v search "Python"                # 详细日志
 ```
 
 ## 常见问题
